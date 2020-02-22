@@ -33,7 +33,7 @@ func main() {
 	//db.LogMode(true)
 	var start, step int
 	flag.IntVar(&step, "step", viper.GetInt("step"), "step for crawling")
-	flag.IntVar(&start, "step", viper.GetInt("start"), "starting student number")
+	flag.IntVar(&start, "start", viper.GetInt("start"), "starting student number")
 	flag.Parse()
 
 	MultipleRawDataByStepLimitSize(step, start, db)
