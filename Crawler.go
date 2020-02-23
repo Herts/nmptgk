@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db.LogMode(true)
+	db.LogMode(viper.GetBool("db.debug"))
 
 	var start, step int
 	var auto bool
