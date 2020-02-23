@@ -33,3 +33,8 @@ type TAdmissionData struct {
 	ADType      string
 	ADMethod    string
 }
+
+type TIdCardPrefix struct {
+	Prefix string `gorm:"unique"`
+	City   string
+}

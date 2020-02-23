@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/anaskhan96/soup"
@@ -11,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -21,7 +23,6 @@ func main() {
 	if err := viper.ReadInConfig(); err != nil {
 		log.Fatal(err)
 	}
-
 	dbLink := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true", viper.GetString("db.username"),
 		viper.GetString("db.password"), viper.GetString("db.url"),
 		viper.GetString("db.port"), viper.GetString("db.database"))
@@ -30,14 +31,48 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	//db.LogMode(true)
+	db.LogMode(true)
+
 	var start, step int
+	var auto bool
+	flag.BoolVar(&auto, "auto", false, "auto mode")
 	flag.IntVar(&step, "step", viper.GetInt("step"), "step for crawling")
 	flag.IntVar(&start, "start", viper.GetInt("start"), "starting student number")
 	flag.Parse()
 
-	MultipleRawDataByStepLimitSize(step, start, db)
-	//MultipleADData(db)
+	if auto {
+		year := 16
+		f, err := os.Open("IDPrefix.json")
+		if err != nil {
+			log.Fatal(err)
+		}
+		m := make(map[string]string)
+		err = json.NewDecoder(f).Decode(&m)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for prefix, city := range m {
+			idPrefix := MustParseInt(prefix)
+			fmt.Println(city)
+			AutoMultipleRawData(year, idPrefix, db)
+		}
+	} else {
+		MultipleRawDataByStepLimitSize(step, start, db)
+	}
+
+}
+
+func AutoMultipleRawData(year int, idPrefix int, db *gorm.DB) {
+	nums := []int{11, 13, 15}
+	for _, num := range nums {
+		start := MustParseInt(fmt.Sprintf("%d%d%d", year, idPrefix, num)) * 10000
+		step := 2000
+		count := -1
+		for count != 0 {
+			count = MultipleRawDataByStepLimitSize(step, start, db)
+			start += step
+		}
+	}
 }
 
 func MultipleADData(db *gorm.DB) {
@@ -127,16 +162,18 @@ func MultipleRawData(db *gorm.DB, size int) {
 	MultipleRawDataByStep(size, start, db)
 }
 
-func MultipleRawDataByStepLimitSize(step, start int, db *gorm.DB) {
+func MultipleRawDataByStepLimitSize(step, start int, db *gorm.DB) int {
 	size := 50
 	i := 0
+	count := 0
 	for i = 0; i < step/size; i++ {
 		tmpStart := start + size*i
 		num := MultipleRawDataByStep(size, tmpStart, db)
+		count += num
 		fmt.Printf("%d students in range from %d to %d\n", num, tmpStart, tmpStart+size)
 	}
-	MultipleRawDataByStep(step%size, start+size*(i-1), db)
-
+	count += MultipleRawDataByStep(step%size, start+size*(i-1), db)
+	return count
 }
 
 func MultipleRawDataByStep(step, start int, db *gorm.DB) int {
@@ -225,4 +262,12 @@ func MustParseFloat(num string) float64 {
 		return 0
 	}
 	return f
+}
+
+func MustParseInt(num string) int {
+	i, err := strconv.Atoi(num)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return i
 }
