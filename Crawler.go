@@ -34,12 +34,13 @@ func main() {
 	}
 	db.LogMode(viper.GetBool("db.debug"))
 
-	var start, step int
+	var start, step, year int
 	var auto bool
 	var mode string
 	flag.BoolVar(&auto, "auto", false, "auto mode")
 	flag.IntVar(&step, "step", viper.GetInt("step"), "step for crawling")
 	flag.IntVar(&start, "start", viper.GetInt("start"), "starting student number")
+	flag.IntVar(&year, "year", viper.GetInt("year"), "year for GAOKAO")
 	flag.StringVar(&mode, "mode", "s", "a for admission, s for score")
 	flag.Parse()
 	switch mode {
@@ -47,7 +48,6 @@ func main() {
 		AutoMultipleAdDataByStep(db, step)
 	case "s":
 		if auto {
-			year := 16
 			f, err := os.Open("IDPrefix.json")
 			if err != nil {
 				log.Fatal(err)
@@ -76,10 +76,9 @@ func AutoMultipleAdDataByStep(db *gorm.DB, step int) {
 		var rawDatas []*TRawData
 		for _, noAd := range noAdDatas {
 			rawDatas = append(rawDatas, &TRawData{StudentNum: noAd.StudentNum, StudentName: noAd.StudentName})
-			fmt.Println(noAd)
 		}
 
-		MultipleAdDataByRawData(size, rawDatas, db)
+		MultipleAdDataByRawData(len(rawDatas), rawDatas, db)
 	}
 }
 
