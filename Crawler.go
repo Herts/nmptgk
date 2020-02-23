@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -35,31 +36,51 @@ func main() {
 
 	var start, step int
 	var auto bool
+	var mode string
 	flag.BoolVar(&auto, "auto", false, "auto mode")
 	flag.IntVar(&step, "step", viper.GetInt("step"), "step for crawling")
 	flag.IntVar(&start, "start", viper.GetInt("start"), "starting student number")
+	flag.StringVar(&mode, "mode", "s", "a for admission, s for score")
 	flag.Parse()
-
-	if auto {
-		year := 16
-		f, err := os.Open("IDPrefix.json")
-		if err != nil {
-			log.Fatal(err)
+	switch mode {
+	case "a":
+		AutoMultipleAdDataByStep(db, step)
+	case "s":
+		if auto {
+			year := 16
+			f, err := os.Open("IDPrefix.json")
+			if err != nil {
+				log.Fatal(err)
+			}
+			m := make(map[string]string)
+			err = json.NewDecoder(f).Decode(&m)
+			if err != nil {
+				log.Fatal(err)
+			}
+			for prefix, city := range m {
+				idPrefix := MustParseInt(prefix)
+				fmt.Println(city)
+				AutoMultipleRawData(year, idPrefix, db)
+			}
+		} else {
+			MultipleRawDataByStepLimitSize(step, start, db)
 		}
-		m := make(map[string]string)
-		err = json.NewDecoder(f).Decode(&m)
-		if err != nil {
-			log.Fatal(err)
-		}
-		for prefix, city := range m {
-			idPrefix := MustParseInt(prefix)
-			fmt.Println(city)
-			AutoMultipleRawData(year, idPrefix, db)
-		}
-	} else {
-		MultipleRawDataByStepLimitSize(step, start, db)
 	}
+}
 
+func AutoMultipleAdDataByStep(db *gorm.DB, step int) {
+	size := 100
+	for i := 0; i < step; i += size {
+		var noAdDatas []*VNoAd
+		db.Limit(size).Find(&noAdDatas)
+		var rawDatas []*TRawData
+		for _, noAd := range noAdDatas {
+			rawDatas = append(rawDatas, &TRawData{StudentNum: noAd.StudentNum, StudentName: noAd.StudentName})
+			fmt.Println(noAd)
+		}
+
+		MultipleAdDataByRawData(size, rawDatas, db)
+	}
 }
 
 func AutoMultipleRawData(year int, idPrefix int, db *gorm.DB) {
@@ -82,20 +103,40 @@ func MultipleADData(db *gorm.DB) {
 	var data TRawData
 	db.Where(&TRawData{StudentNum: adData.StudentNum}).First(&data)
 
+	size := 100
 	id := data.ID
-	for i := uint(1); i < 10; i++ {
-		data = TRawData{}
-		db.Where(&TRawData{Model: gorm.Model{ID: id + i}}).First(&data)
-		fmt.Println(data)
-		adData := AdDataByData(data)
-		if adData == nil {
-			continue
-		}
-		db.Create(adData)
-	}
+	MultipleAdDatasById(db, id, size)
 }
 
-func AdDataByData(data TRawData) *TAdmissionData {
+func MultipleAdDatasById(db *gorm.DB, id uint, size int) int {
+	var rawDatas []*TRawData
+	db.Where("id > ?", id).Limit(size).Find(&rawDatas)
+
+	return MultipleAdDataByRawData(size, rawDatas, db)
+}
+
+func MultipleAdDataByRawData(size int, rawDatas []*TRawData, db *gorm.DB) int {
+	var adDatas = make([]*TAdmissionData, size)
+	wg := sync.WaitGroup{}
+	wg.Add(size)
+	for i := range rawDatas {
+		go func(i int, group *sync.WaitGroup) {
+			adDatas[i] = AdDataByData(rawDatas[i])
+			group.Done()
+		}(i, &wg)
+	}
+	wg.Wait()
+	count := 0
+	for _, adData := range adDatas {
+		if adData != nil {
+			db.Create(adData)
+			count++
+		}
+	}
+	return count
+}
+
+func AdDataByData(data *TRawData) *TAdmissionData {
 	studentNum := data.StudentNum
 	studentName := data.StudentName
 	adData := AdData(studentNum, studentName)
@@ -122,7 +163,7 @@ func AdData(studentNum string, studentName string) *TAdmissionData {
 		Send(fmt.Sprintf("v_ksh=%s", studentNum)).
 		Send(fmt.Sprintf("v_xm=%s", studentName)).
 		Send("query=查  询").
-		Retry(1, 2*time.Second, http.StatusBadRequest, http.StatusInternalServerError).
+		Retry(2, 2*time.Second, http.StatusBadRequest, http.StatusInternalServerError).
 		Timeout(1 * time.Second).
 		End()
 	if errs != nil {
@@ -136,9 +177,20 @@ func AdData(studentNum string, studentName string) *TAdmissionData {
 	for _, p := range ps {
 		record = append(record, p.Text())
 	}
+
 	if len(record) < 5 {
+		regex := regexp.MustCompile("未找到对应考生")
+		notAd := regex.FindString(body)
+		if len(notAd) > 0 {
+			return &TAdmissionData{
+				StudentNum:  studentNum,
+				StudentName: studentName,
+				School:      "未录取",
+			}
+		}
 		return nil
 	}
+
 	record = record[len(record)/2+1:]
 	adData := &TAdmissionData{
 		StudentNum:  record[0],

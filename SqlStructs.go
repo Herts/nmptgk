@@ -38,3 +38,9 @@ type TIdCardPrefix struct {
 	Prefix string `gorm:"unique"`
 	City   string
 }
+
+type VNoAd struct {
+	ID          uint
+	StudentNum  string
+	StudentName string
+}
