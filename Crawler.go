@@ -275,7 +275,7 @@ func GetScores(stuNum int) *TRawData {
 	for _, p := range ps {
 		record = append(record, p.Text())
 	}
-	if len(record) == 0 {
+	if len(record) < 16 {
 		return nil
 	}
 	fmt.Println(record)
